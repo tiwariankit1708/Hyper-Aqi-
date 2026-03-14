@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AQI Live Monitor</title>
+  <meta name="description" content="Real-time Air Quality Index monitor with heatmap, city search, voice announcements">
+  <link rel="icon" type="image/png" href="static/favicon.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Leaflet Heat plugin for heatmap -->
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+  <!-- ResponsiveVoice for guaranteed TTS -->
+  <script src="https://code.responsivevoice.org/responsivevoice.js?key=pxaclep5"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0a0a1a 0%, #0d1b2a 40%, #1b2838 100%);
+      min-height: 100vh;
+      color: #e0e0e0;
+      overflow-x: hidden
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, rgba(15, 25, 50, 0.95), rgba(20, 35, 60, 0.9));
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(100, 200, 255, 0.15);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 1000
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00d4ff, #00ff88, #00d4ff, transparent);
+      animation: shimmer 4s ease-in-out infinite
+    }
+
+    @keyframes shimmer {
+
+      0%,
+      100% {
+        opacity: .5
+      }
+
+      50% {
+        opacity: 1
+      }
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px
+    }
+
+    .header-logo {
+      width: 36px;
+      height: 36px;
+      filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.5));
+      animation: float 3s ease-in-out infinite
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0)
+      }
+
+      50% {
+        transform: translateY(-3px)
+      }
+    }
+
+    .header-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff, #00ff88);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text
+    }
+
+    .header-subtitle {
+      font-size: .65rem;
+      color: rgba(0, 212, 255, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-weight: 500
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: .7rem;
+      font-weight: 600;
+      color: #00ff88;
+      text-transform: uppercase;
+      letter-spacing: 1px
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      background: #00ff88;
+      border-radius: 50%;
+      animation: pulse-dot 1.5s ease-in-out infinite
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.6)
+      }
+
+      50% {
+        box-shadow: 0 0 0 6px rgba(0, 255, 136, 0)
+      }
+    }
+
+    /* Search Row */
+    .search-row {
+      padding: 10px 24px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 180px;
+      padding: 10px 16px;
+      border: 1px solid rgba(100, 200, 255, 0.2);
+      background: rgba(15, 25, 50, 0.8);
+      backdrop-filter: blur(8px);
+      border-radius: 12px;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: .85rem;
+      outline: none;
+      transition: border-color .3s
+    }
+
+    .search-input:focus {
+      border-color: #00d4ff
+    }
+
+    .search-input::placeholder {
+      color: rgba(255, 255, 255, 0.35)
+    }
+
+    .btn {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .3s;
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .btn:hover {
+      transform: scale(1.03)
+    }
+
+    .btn-search {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      color: #000
+    }
+
+    .btn-gps {
+      background: linear-gradient(135deg, #00ff88, #00cc6a);
+      color: #000
+    }
+
+    .btn-voice-search {
+      background: linear-gradient(135deg, #f472b6, #ec4899);
+      color: #fff
+    }
+
+    /* Cards Grid */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      padding: 8px 24px 14px
+    }
+
+    .card {
+      background: linear-gradient(135deg, rgba(20, 30, 60, 0.8), rgba(15, 25, 50, 0.6));
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(100, 200, 255, 0.1);
+      border-radius: 16px;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+      transition: transform .3s, border-color .3s
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(100, 200, 255, 0.3)
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: 16px 16px 0 0
+    }
+
+    .c-aqi::before {
+      background: linear-gradient(90deg, #00d4ff, #00ff88)
+    }
+
+    .c-temp::before {
+      background: linear-gradient(90deg, #ff6b6b, #ffa500)
+    }
+
+    .c-loc::before {
+      background: linear-gradient(90deg, #a855f7, #6366f1)
+    }
+
+    .c-voice::before {
+      background: linear-gradient(90deg, #f472b6, #ec4899)
+    }
+
+    .card-label {
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: rgba(255, 255, 255, 0.45);
+      font-weight: 600;
+      margin-bottom: 6px
+    }
+
+    .card-val {
+      font-size: 1.8rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px
+    }
+
+    .card-sub {
+      font-size: .75rem;
+      color: rgba(255, 255, 255, 0.45);
+      font-weight: 400
+    }
+
+    .card-icon {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-size: 1.4rem;
+      opacity: .25
+    }
+
+    .aqi-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: .65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-top: 4px
+    }
+
+    /* Voice Section */
+    .voice-input-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px
+    }
+
+    .voice-city-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid rgba(244, 114, 182, 0.25);
+      background: rgba(244, 114, 182, 0.05);
+      border-radius: 10px;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: .78rem;
+      outline: none
+    }
+
+    .voice-city-input::placeholder {
+      color: rgba(244, 114, 182, 0.4)
+    }
+
+    .voice-city-input:focus {
+      border-color: rgba(244, 114, 182, 0.5)
+    }
+
+    .voice-btn {
+      padding: 8px 14px;
+      border: 1px solid rgba(244, 114, 182, 0.3);
+      background: linear-gradient(135deg, rgba(244, 114, 182, 0.2), rgba(236, 72, 153, 0.15));
+      border-radius: 10px;
+      color: #f472b6;
+      font-family: 'Inter', sans-serif;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .3s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap
+    }
+
+    .voice-btn:hover {
+      background: linear-gradient(135deg, rgba(244, 114, 182, 0.35), rgba(236, 72, 153, 0.25));
+      transform: scale(1.03)
+    }
+
+    .voice-btn.speaking {
+      animation: speak-pulse 1s ease-in-out infinite
+    }
+
+    @keyframes speak-pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.4)
+      }
+
+      50% {
+        box-shadow: 0 0 0 8px rgba(244, 114, 182, 0)
+      }
+    }
+
+    /* Map */
+    .map-wrap {
+      margin: 0 24px 14px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4)
+    }
+
+    #map {
+      height: 50vh
+    }
+
+    /* Heatmap Legend */
+    .heatmap-legend {
+      position: absolute;
+      bottom: 30px;
+      left: 12px;
+      z-index: 999;
+      background: rgba(15, 25, 50, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .7rem
+    }
+
+    .heatmap-legend h4 {
+      color: #00d4ff;
+      font-size: .7rem;
+      margin-bottom: 6px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 3px 0
+    }
+
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px
+    }
+
+    /* Map Controls */
+    .map-ctrls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px 24px
+    }
+
+    .map-ctrls span {
+      font-size: .8rem;
+      font-weight: 600;
+      color: rgba(0, 212, 255, 0.7);
+      letter-spacing: .5px
+    }
+
+    .cbtn {
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      background: rgba(0, 212, 255, 0.08);
+      border-radius: 10px;
+      color: #00d4ff;
+      font-size: .9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .25s
+    }
+
+    .cbtn:hover {
+      background: rgba(0, 212, 255, 0.2);
+      transform: scale(1.08)
+    }
+
+    .cbtn-loc {
+      padding: 6px 14px;
+      width: auto;
+      gap: 6px;
+      font-family: 'Inter', sans-serif;
+      font-size: .7rem;
+      font-weight: 600
+    }
+
+    /* Searched Cities List */
+    .cities-bar {
+      padding: 0 24px 10px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      flex-wrap: nowrap
+    }
+
+    .city-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      background: rgba(20, 30, 60, 0.6);
+      border-radius: 20px;
+      font-size: .72rem;
+      font-weight: 500;
+      color: #ccc;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all .25s
+    }
+
+    .city-chip:hover {
+      border-color: #00d4ff;
+      color: #00d4ff
+    }
+
+    .city-chip .chip-aqi {
+      font-weight: 700;
+      margin-left: 2px
+    }
+
+    .city-chip .chip-remove {
+      cursor: pointer;
+      opacity: .4;
+      margin-left: 4px;
+      font-size: .85rem
+    }
+
+    .city-chip .chip-remove:hover {
+      opacity: 1;
+      color: #ff6b6b
+    }
+
+    /* Footer */
+    .footer {
+      padding: 16px 24px;
+      max-width: 900px
+    }
+
+    .footer p {
+      font-size: .78rem;
+      color: rgba(255, 255, 255, 0.35);
+      line-height: 1.6;
+      margin-bottom: 6px
+    }
+
+    .footer a {
+      color: #00d4ff;
+      text-decoration: none
+    }
+
+    .footer a:hover {
+      color: #00ff88
+    }
+
+    /* Location Marker */
+    .loc-marker {
+      width: 20px;
+      height: 20px;
+      background: radial-gradient(circle, #4f9fff 40%, rgba(79, 159, 255, 0.3) 70%, transparent 100%);
+      border: 3px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(79, 159, 255, 0.6);
+      animation: loc-pulse 2s ease-in-out infinite
+    }
+
+    @keyframes loc-pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(79, 159, 255, 0.5), 0 0 12px rgba(79, 159, 255, 0.6)
+      }
+
+      50% {
+        box-shadow: 0 0 0 16px rgba(79, 159, 255, 0), 0 0 12px rgba(79, 159, 255, 0.6)
+      }
+    }
+
+    .leaflet-control-zoom a {
+      background: rgba(255, 255, 255, 0.95) !important;
+      color: #333 !important
+    }
+
+    @media(max-width:768px) {
+      .cards {
+        grid-template-columns: 1fr 1fr
+      }
+
+      .map-wrap {
+        margin: 0 12px 12px
+      }
+
+      .header {
+        padding: 12px 16px
+      }
+
+      .header-title {
+        font-size: 1.1rem
+      }
+
+      #map {
+        height: 40vh
+      }
+
+      .search-row {
+        padding: 8px 16px
+      }
+
+      .cards {
+        padding: 6px 16px
+      }
+    }
+
+    @media(max-width:500px) {
+      .cards {
+        grid-template-columns: 1fr
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <img src="static/favicon.png" class="header-logo" alt="AQI" />
+      <div>
+        <div class="header-title">AQI Live Monitor</div>
+        <div class="header-subtitle">Real-time Air Quality · Heatmap · Voice</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-badge">
+        <div class="live-dot"></div><span>Live</span>
+      </div>
+      <span id="krig_time" style="color:#00d4ff;font-size:.8rem;font-weight:600;">--:--</span>
+    </div>
+  </div>
+
+  <!-- Search Row -->
+  <div class="search-row">
+    <input type="text" class="search-input" id="city-input"
+      placeholder="🔍 Search any city (Delhi, Mumbai, London, New York...)"
+      onkeydown="if(event.key==='Enter')searchCity()">
+    <button class="btn btn-search" onclick="searchCity()">🔍 Search AQI</button>
+    <button class="btn btn-gps" onclick="requestGPS()">📡 GPS</button>
+  </div>
+
+  <!-- Searched Cities Chips -->
+  <div class="cities-bar" id="cities-bar"></div>
+
+  <!-- Info Cards -->
+  <div class="cards">
+    <div class="card c-aqi">
+      <div class="card-icon">🌬️</div>
+      <div class="card-label">Air Quality Index</div>
+      <div class="card-val" style="color:#00ff88" id="aqi-val">--</div>
+      <div id="aqi-badge" class="aqi-badge" style="display:none"></div>
+      <div class="card-sub" id="aqi-sub">Search a city to see AQI</div>
+    </div>
+    <div class="card c-temp">
+      <div class="card-icon">🌡️</div>
+      <div class="card-label">Temperature</div>
+      <div class="card-val" style="color:#ffa500" id="temp-val">--</div>
+      <div class="card-sub" id="temp-sub">Search a city to see weather</div>
+    </div>
+    <div class="card c-loc">
+      <div class="card-icon">📍</div>
+      <div class="card-label">Current Location</div>
+      <div class="card-val" style="font-size:1rem;color:#a78bfa;font-weight:600" id="loc-val">Search or use GPS</div>
+      <div class="card-sub" id="loc-sub">Type a city above or click GPS</div>
+    </div>
+    <div class="card c-voice">
+      <div class="card-icon">🔊</div>
+      <div class="card-label">Voice AQI Report</div>
+      <div class="card-sub" style="margin-bottom:6px">Type a city and hear its AQI report</div>
+      <div class="voice-input-row">
+        <input type="text" class="voice-city-input" id="voice-city" placeholder="City name..."
+          onkeydown="if(event.key==='Enter')voiceForCity()">
+        <button class="voice-btn" id="voice-btn" onclick="voiceForCity()">🔊 Speak</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map Controls -->
+  <div class="map-ctrls">
+    <span>AQI Timeline</span>
+    <button class="cbtn" onclick="krig_change('back')" title="Previous">◀</button>
+    <button class="cbtn" onclick="krig_change('forward')" title="Next">▶</button>
+    <button class="cbtn cbtn-loc" onclick="requestGPS()" title="My Location">📍 Locate Me</button>
+  </div>
+
+  <!-- Map -->
+  <div class="map-wrap" style="position:relative">
+    <div id="map"></div>
+    <div class="heatmap-legend" id="heatmap-legend">
+      <h4>AQI Heatmap</h4>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#00e400"></div> 0-50 Good
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#ffff00"></div> 51-100 Moderate
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#ff7e00"></div> 101-150 Sensitive
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#ff0000"></div> 151-200 Unhealthy
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#8f3f97"></div> 201-300 Very Unhealthy
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background:#7e0023"></div> 300+ Hazardous
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <p>
+      <a href="https://api.purpleair.com/" target="_blank">Purple Air API</a> &bull;
+      <a href="https://leafletjs.com/" target="_blank">Leaflet</a> &
+      <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a> &bull;
+      <a href="https://open-meteo.com/" target="_blank">Open-Meteo API</a> (AQI & Weather) &bull;
+      Heatmap by <a href="https://github.com/Leaflet/Leaflet.heat" target="_blank">Leaflet.heat</a>
+    </p>
+  </div>
+
+  <script src="static/L.Control.MousePosition.js" type="text/javascript"></script>
+
+  <script>
+    // ═══════════════════════════════════════════
+    // GLOBAL STATE
+    // ═══════════════════════════════════════════
+    let userLat = null, userLng = null;
+    let currentAQI = null, currentTemp = null, currentCategory = '';
+    let userMarker = null, userCircle = null;
+    let heatLayer = null;
+    let searchedCities = []; // {name, lat, lng, aqi, temp, marker}
+    let cityMarkers = [];
+
+    // ═══════════════════════════════════════════
+    // AQI HELPERS
+    // ═══════════════════════════════════════════
+    function getAQICat(aqi) {
+      if (aqi <= 50) return { label: 'Good', color: '#00e400', bg: 'rgba(0,228,0,0.15)', border: 'rgba(0,228,0,0.4)' };
+      if (aqi <= 100) return { label: 'Moderate', color: '#ffff00', bg: 'rgba(255,255,0,0.12)', border: 'rgba(255,255,0,0.4)' };
+      if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: '#ff7e00', bg: 'rgba(255,126,0,0.15)', border: 'rgba(255,126,0,0.4)' };
+      if (aqi <= 200) return { label: 'Unhealthy', color: '#ff0000', bg: 'rgba(255,0,0,0.15)', border: 'rgba(255,0,0,0.4)' };
+      if (aqi <= 300) return { label: 'Very Unhealthy', color: '#8f3f97', bg: 'rgba(143,63,151,0.15)', border: 'rgba(143,63,151,0.4)' };
+      return { label: 'Hazardous', color: '#7e0023', bg: 'rgba(126,0,35,0.2)', border: 'rgba(126,0,35,0.5)' };
+    }
+
+    function aqiColor(aqi) {
+      if (aqi <= 50) return '#00e400';
+      if (aqi <= 100) return '#cccc00';
+      if (aqi <= 150) return '#ff7e00';
+      if (aqi <= 200) return '#ff0000';
+      if (aqi <= 300) return '#8f3f97';
+      return '#7e0023';
+    }
+
+    // ═══════════════════════════════════════════
+    // FETCH AQI & WEATHER
+    // ═══════════════════════════════════════════
+    async function fetchAQI(lat, lng) {
+      try {
+        const r = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,european_aqi,european_aqi_pm2_5,pm2_5,pm10`);
+        const d = await r.json();
+        if (d.current) {
+          // Use us_aqi first, fall back to european_aqi, then european_aqi_pm2_5
+          let aqi = d.current.us_aqi;
+          if (aqi == null) aqi = d.current.european_aqi;
+          if (aqi == null) aqi = d.current.european_aqi_pm2_5;
+          return { aqi: aqi, pm25: d.current.pm2_5, pm10: d.current.pm10 };
+        }
+      } catch (e) { console.error('AQI fetch error:', e); }
+      return null;
+    }
+
+    async function fetchTemp(lat, lng) {
+      try {
+        const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,apparent_temperature`);
+        const d = await r.json();
+        if (d.current) return d.current;
+      } catch (e) { }
+      return null;
+    }
+
+    // ═══════════════════════════════════════════
+    // UPDATE CARDS
+    // ═══════════════════════════════════════════
+    function updateAQICard(data) {
+      if (!data) { document.getElementById('aqi-sub').textContent = 'AQI data unavailable'; return; }
+      currentAQI = data.aqi;
+      const cat = getAQICat(currentAQI);
+      currentCategory = cat.label;
+      document.getElementById('aqi-val').textContent = currentAQI;
+      document.getElementById('aqi-val').style.color = cat.color;
+      const badge = document.getElementById('aqi-badge');
+      badge.style.display = 'inline-block';
+      badge.textContent = cat.label;
+      badge.style.background = cat.bg;
+      badge.style.border = `1px solid ${cat.border}`;
+      badge.style.color = cat.color;
+      let subs = [];
+      if (data.pm25 != null) subs.push(`PM2.5: ${data.pm25} µg/m³`);
+      if (data.pm10 != null) subs.push(`PM10: ${data.pm10} µg/m³`);
+      document.getElementById('aqi-sub').textContent = subs.join(' · ');
+    }
+
+    function updateTempCard(data) {
+      if (!data) { document.getElementById('temp-sub').textContent = 'Weather data unavailable'; return; }
+      currentTemp = data.temperature_2m;
+      document.getElementById('temp-val').textContent = `${currentTemp}°C`;
+      let d = [];
+      if (data.apparent_temperature != null) d.push(`Feels ${data.apparent_temperature}°C`);
+      if (data.relative_humidity_2m != null) d.push(`Humidity ${data.relative_humidity_2m}%`);
+      if (data.wind_speed_10m != null) d.push(`Wind ${data.wind_speed_10m} km/h`);
+      document.getElementById('temp-sub').textContent = d.join(' · ');
+    }
+
+    // ═══════════════════════════════════════════
+    // AQI HEATMAP (5km radius grid)
+    // ═══════════════════════════════════════════
+    async function buildHeatmap(lat, lng) {
+      // Generate grid points in ~5km radius (0.045 degrees ≈ 5km)
+      const step = 0.015; // ~1.5km between points
+      const radius = 0.045; // ~5km
+      const points = [];
+      const promises = [];
+
+      for (let dlat = -radius; dlat <= radius; dlat += step) {
+        for (let dlng = -radius; dlng <= radius; dlng += step) {
+          const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+          if (dist <= radius) {
+            const plat = lat + dlat;
+            const plng = lng + dlng;
+            promises.push(
+              fetchAQI(plat, plng).then(data => {
+                if (data && data.aqi != null) {
+                  // Leaflet.heat expects [lat, lng, intensity]
+                  // Normalize AQI 0-500 to 0-1 intensity
+                  const intensity = Math.min(data.aqi / 300, 1);
+                  points.push([plat, plng, intensity]);
+                }
+              })
+            );
+          }
+        }
+      }
+
+      await Promise.all(promises);
+
+      // Remove old heatmap
+      if (heatLayer) map.removeLayer(heatLayer);
+
+      if (points.length > 0) {
+        heatLayer = L.heatLayer(points, {
+          radius: 35,
+          blur: 25,
+          maxZoom: 17,
+          max: 1.0,
+          gradient: {
+            0.0: '#00e400',   // Good (green)
+            0.17: '#ffff00',  // Moderate (yellow)
+            0.33: '#ff7e00',  // Sensitive (orange)
+            0.5: '#ff0000',   // Unhealthy (red)
+            0.75: '#8f3f97',  // Very Unhealthy (purple)
+            1.0: '#7e0023'    // Hazardous (maroon)
+          }
+        }).addTo(map);
+      }
+    }
+
+    // ═══════════════════════════════════════════
+    // PLACE USER ON MAP
+    // ═══════════════════════════════════════════
+    function placeUser(lat, lng, zoom, locName) {
+      userLat = lat; userLng = lng;
+      if (userMarker) map.removeLayer(userMarker);
+      if (userCircle) map.removeLayer(userCircle);
+
+      const icon = L.divIcon({ className: '', html: '<div class="loc-marker"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+      userMarker = L.marker([lat, lng], { icon, zIndex: 9999 }).addTo(map);
+      userMarker.bindPopup(`<b>📍 ${locName || 'Your Location'}</b><br>${lat.toFixed(4)}, ${lng.toFixed(4)}`).openPopup();
+      userCircle = L.circle([lat, lng], { radius: 5000, color: '#4f9fff', fillColor: '#4f9fff', fillOpacity: 0.05, weight: 1, opacity: 0.2, dashArray: '6' }).addTo(map);
+      map.flyTo([lat, lng], zoom || 13, { duration: 1.2 });
+    }
+
+    // ═══════════════════════════════════════════
+    // SEARCH CITY
+    // ═══════════════════════════════════════════
+    async function searchCity() {
+      const q = document.getElementById('city-input').value.trim();
+      if (!q) { alert('Please enter a city name!'); return; }
+
+      document.getElementById('loc-val').textContent = 'Searching...';
+      document.getElementById('loc-sub').textContent = `Looking up "${q}"`;
+
+      try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
+        const data = await r.json();
+        if (data.length === 0) {
+          document.getElementById('loc-val').textContent = 'Not found';
+          document.getElementById('loc-sub').textContent = 'Try a different city name';
+          return;
+        }
+        const place = data[0];
+        const lat = parseFloat(place.lat), lng = parseFloat(place.lon);
+        const name = place.display_name.split(',').slice(0, 2).join(', ');
+
+        // Update location card
+        document.getElementById('loc-val').textContent = name;
+        document.getElementById('loc-sub').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+        // Place on map
+        placeUser(lat, lng, 12, name);
+
+        // Fetch AQI & temp
+        const [aqiData, tempData] = await Promise.all([fetchAQI(lat, lng), fetchTemp(lat, lng)]);
+        updateAQICard(aqiData);
+        updateTempCard(tempData);
+
+        // Build heatmap
+        buildHeatmap(lat, lng);
+
+        // Add to searched cities
+        addCityChip(name, lat, lng, aqiData ? aqiData.aqi : null, tempData ? tempData.temperature_2m : null);
+
+      } catch (e) {
+        document.getElementById('loc-val').textContent = 'Search error';
+        document.getElementById('loc-sub').textContent = 'Network error, try again';
+      }
+    }
+
+    // ═══════════════════════════════════════════
+    // CITY CHIPS (searched cities comparison)
+    // ═══════════════════════════════════════════
+    function addCityChip(name, lat, lng, aqi, temp) {
+      // Don't duplicate
+      if (searchedCities.find(c => c.name === name)) return;
+
+      const city = { name, lat, lng, aqi, temp };
+      searchedCities.push(city);
+
+      // Add marker on map
+      const color = aqi != null ? aqiColor(aqi) : '#999';
+      const m = L.circleMarker([lat, lng], {
+        radius: 10, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.8
+      }).addTo(map);
+      m.bindPopup(`<b>${name}</b><br>AQI: ${aqi != null ? aqi : 'N/A'}<br>Temp: ${temp != null ? temp + '°C' : 'N/A'}`);
+      city.marker = m;
+
+      renderChips();
+    }
+
+    function renderChips() {
+      const bar = document.getElementById('cities-bar');
+      bar.innerHTML = '';
+      searchedCities.forEach((c, i) => {
+        const color = c.aqi != null ? aqiColor(c.aqi) : '#999';
+        const chip = document.createElement('div');
+        chip.className = 'city-chip';
+        chip.innerHTML = `
+        <span style="color:${color};font-size:.9rem">●</span>
+        ${c.name.split(',')[0]}
+        <span class="chip-aqi" style="color:${color}">${c.aqi != null ? c.aqi : '--'}</span>
+        <span>${c.temp != null ? c.temp + '°C' : ''}</span>
+        <span class="chip-remove" onclick="removeChip(${i});event.stopPropagation()">×</span>
+      `;
+        chip.onclick = () => {
+          map.flyTo([c.lat, c.lng], 13, { duration: 1 });
+          // Update cards
+          document.getElementById('loc-val').textContent = c.name;
+          document.getElementById('loc-sub').textContent = `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`;
+          if (c.aqi != null) updateAQICard({ aqi: c.aqi });
+          if (c.temp != null) {
+            currentTemp = c.temp;
+            document.getElementById('temp-val').textContent = `${c.temp}°C`;
+          }
+          buildHeatmap(c.lat, c.lng);
+        };
+        bar.appendChild(chip);
+      });
+    }
+
+    function removeChip(i) {
+      const c = searchedCities[i];
+      if (c.marker) map.removeLayer(c.marker);
+      searchedCities.splice(i, 1);
+      renderChips();
+    }
+
+    // ═══════════════════════════════════════════
+    // GPS
+    // ═══════════════════════════════════════════
+    function requestGPS() {
+      if (!navigator.geolocation) {
+        alert('GPS not supported. Please type your city in the search bar.');
+        return;
+      }
+      document.getElementById('loc-val').textContent = 'Requesting GPS...';
+      document.getElementById('loc-sub').textContent = 'Allow location access in the popup';
+
+      navigator.geolocation.getCurrentPosition(
+        async function (pos) {
+          const lat = pos.coords.latitude, lng = pos.coords.longitude;
+          placeUser(lat, lng, 14, 'Your Location');
+
+          // Reverse geocode
+          try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16`, { headers: { 'Accept-Language': 'en' } });
+            const d = await r.json();
+            if (d.display_name) {
+              const name = d.display_name.split(',').slice(0, 3).join(', ');
+              document.getElementById('loc-val').textContent = name;
+              document.getElementById('loc-sub').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)} (GPS)`;
+            }
+          } catch (e) {
+            document.getElementById('loc-val').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+
+          const [aqiData, tempData] = await Promise.all([fetchAQI(lat, lng), fetchTemp(lat, lng)]);
+          updateAQICard(aqiData);
+          updateTempCard(tempData);
+          buildHeatmap(lat, lng);
+        },
+        function (err) {
+          alert('GPS denied or timed out.\n\nPlease type your city in the search bar instead!\n\nError: ' + err.message);
+          document.getElementById('loc-val').textContent = 'GPS unavailable';
+          document.getElementById('loc-sub').textContent = 'Use search bar instead';
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    // VOICE: Announce AQI for any city
+    // ═══════════════════════════════════════════
+    async function voiceForCity() {
+      const btn = document.getElementById('voice-btn');
+      const cityInput = document.getElementById('voice-city').value.trim();
+
+      btn.classList.add('speaking');
+      btn.innerHTML = '🔊 Loading...';
+
+      let cityName = '';
+      let aqiVal = null, tempVal = null, catLabel = '';
+
+      if (cityInput) {
+        // Fetch for the specified city
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cityInput)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
+          const places = await r.json();
+          if (places.length > 0) {
+            const lat = parseFloat(places[0].lat), lng = parseFloat(places[0].lon);
+            cityName = places[0].display_name.split(',')[0];
+            const [ad, td] = await Promise.all([fetchAQI(lat, lng), fetchTemp(lat, lng)]);
+            if (ad && ad.aqi != null) { aqiVal = ad.aqi; catLabel = getAQICat(ad.aqi).label; }
+            if (td && td.temperature_2m != null) tempVal = td.temperature_2m;
+          } else {
+            cityName = cityInput;
+          }
+        } catch (e) {
+          console.error('Voice city lookup error:', e);
+          cityName = cityInput;
+        }
+      } else {
+        // Use current data
+        cityName = document.getElementById('loc-val').textContent;
+        aqiVal = currentAQI;
+        tempVal = currentTemp;
+        catLabel = currentCategory;
+      }
+
+      // Build speech text
+      let text = `Air quality report for ${cityName}. `;
+      if (aqiVal != null) {
+        text += `The Air Quality Index is ${aqiVal}, which is ${catLabel}. `;
+      } else {
+        text += `AQI data is not available for ${cityName}. `;
+      }
+      if (tempVal != null) {
+        text += `The temperature is ${tempVal} degrees Celsius.`;
+      } else {
+        text += `Temperature data is not available.`;
+      }
+
+      btn.innerHTML = '🔊 Speaking...';
+
+      // Use ResponsiveVoice (reliable)
+      if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
+        responsiveVoice.speak(text, "UK English Female", {
+          rate: 0.9, pitch: 1, volume: 1,
+          onend: () => resetVoiceBtn(btn),
+          onerror: () => { fallbackSpeak(text, btn); }
+        });
+      } else {
+        fallbackSpeak(text, btn);
+      }
+    }
+
+    function fallbackSpeak(text, btn) {
+      if (!('speechSynthesis' in window)) {
+        alert('Voice not supported. Please use Chrome or Edge.');
+        resetVoiceBtn(btn);
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.9; u.pitch = 1; u.volume = 1; u.lang = 'en-US';
+      const v = window.speechSynthesis.getVoices();
+      const gv = v.find(x => x.name.includes('Google') && x.lang.startsWith('en'));
+      if (gv) u.voice = gv;
+      u.onend = () => resetVoiceBtn(btn);
+      u.onerror = () => resetVoiceBtn(btn);
+      window.speechSynthesis.speak(u);
+      const ka = setInterval(() => {
+        if (!window.speechSynthesis.speaking) { clearInterval(ka); return; }
+        window.speechSynthesis.pause(); window.speechSynthesis.resume();
+      }, 5000);
+    }
+
+    function resetVoiceBtn(btn) {
+      btn.classList.remove('speaking');
+      btn.innerHTML = '🔊 Speak';
+    }
+
+    // Preload voices
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    }
+  </script>
+
+  <!-- Kriging -->
+  <script>
+    function updateRealTime() {
+      const now = new Date();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      let hh = now.getHours();
+      const ampm = hh >= 12 ? 'PM' : 'AM';
+      hh = hh % 12;
+      hh = hh ? hh : 12;
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const sec = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById("krig_time").innerHTML = `${mm}/${dd} ${hh}:${min}:${sec} ${ampm}`;
+    }
+    updateRealTime();
+    setInterval(updateRealTime, 1000);
+
+    async function krig_change(dir) {
+      const imgs = document.getElementsByClassName("leaflet-image-layer");
+      if (!imgs.length) return;
+      const cur = parseInt(imgs[0].src.charAt(85));
+      try {
+        const r = await fetch("https://raw.githubusercontent.com/NBPub/AQI_Map/refs/heads/main/data/kriging_timestamps.json");
+        const j = await r.json();
+        const base = "https://raw.githubusercontent.com/NBPub/AQI_Map/refs/heads/main/data/kriging_history/";
+        if (document.getElementById("markersJS")) document.getElementById("markersJS").remove();
+        let n;
+        if (dir == "back") n = cur < 9 ? cur + 1 : 0;
+        else if (dir == "forward") n = cur == 0 ? 9 : cur - 1;
+        else n = 0;
+
+        imgs[0].src = base + n + '.png';
+        const s = document.createElement('script'); s.id = "markersJS"; s.src = "./data/markers_history/" + n + ".js"; document.head.appendChild(s);
+      } catch (e) { }
+    }
+  </script>
+
+  <!-- Map Init -->
+  <script>
+    // Standard OpenStreetMap road view
+    var map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    L.control.scale().addTo(map);
+
+    // Kriging overlay (from original project)
+    var imageUrl = 'https://raw.githubusercontent.com/NBPub/AQI_Map/refs/heads/main/data/kriging_history/0.png';
+    var latLngBounds = L.latLngBounds([[43.62, -121.75], [44.43, -120.77]]);
+    L.imageOverlay(imageUrl, latLngBounds, { opacity: 0.7, interactive: true }).addTo(map);
+
+    var cbar = L.control({ position: 'bottomright' });
+    cbar.onAdd = function () { var d = L.DomUtil.create('div', 'info cbar'); d.innerHTML = '<img src="static/colorbar.png" style="opacity:0.8;max-width:45vw;height:auto;border-radius:8px;"/>'; return d; };
+    cbar.addTo(map);
+
+    L.control.mousePosition({ position: "topright", separator: ", ", emptyString: " ", numDigits: 3 }).addTo(map);
+
+    krig_change('start');
+  </script>
+</body>
+
+</html>
